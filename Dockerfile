@@ -2,7 +2,7 @@ FROM golang:alpine AS build
 
 RUN apk --no-cache add build-base git gcc
 
-ENV FRP_VERSION 0.34.1
+ENV FRP_VERSION 0.35.1
 
 RUN git clone https://github.com/fatedier/frp.git /frp && cd /frp && git reset --hard v${FRP_VERSION}
 RUN cd /frp && make
