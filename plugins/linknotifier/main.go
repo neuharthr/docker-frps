@@ -429,11 +429,15 @@ func notifier_main() {
                     gruped_proxies[proxy_ref.Email] = append(gruped_proxies[proxy_ref.Email], proxy_ref)
                 }
 
+                // Release mutex before sending emails (which can be slow)
+                mutex.Unlock()
+
                 // perform user notification if needed
                 if should_notify {
 
                     var num_sent_emails int = 0
                     var email_recipients []string
+                    var successfully_notified_proxies []string // track which proxies were notified
                     
                     // go over each group and create a notification list
                     for email, proxy_ref_list := range gruped_proxies {
@@ -481,7 +485,7 @@ func notifier_main() {
 
                             if err != nil {
                                 fmt.Printf("[linknotifier]: ERROR %s", err)
-                                return
+                                continue
                             }
 
                             var msg_str string = fmt.Sprintf("To: %s\r\n", email) +
@@ -499,38 +503,37 @@ func notifier_main() {
                             num_sent_emails = num_sent_emails + 1
                             email_recipients = append(email_recipients, email)
                             
-                            // mark both active and inactive connections as notified
+                            // collect proxy names that were successfully notified
                             for _, proxy_ref := range proxy_ref_list {
-                                if proxy_ref.Active {
-                                    // mark as notified
-                                    var actual_ref = references.Proxies[proxy_ref.Name]
-                                    actual_ref.Notified = true
-
-                                    references.Proxies[proxy_ref.Name] = actual_ref
-                                }
-                            }
-
-                            for _, proxy_ref := range proxy_ref_list {
-                                if !proxy_ref.Active {
-                                    // mark as notified
-                                    var actual_ref = references.Proxies[proxy_ref.Name]
-                                    actual_ref.Notified = true
-
-                                    references.Proxies[proxy_ref.Name] = actual_ref
-
-                                }
+                                successfully_notified_proxies = append(successfully_notified_proxies, proxy_ref.Name)
                             }
                         }
                     }
 
                     fmt.Printf("[linknotifier]: Notification email sent to %d recipient(s): %s\n", num_sent_emails, strings.Join(email_recipients[:],", "))
 
-                    // save updated links
-                    saveProxyLinksJSON()
+                    // Re-acquire mutex to update notified status
+                    if len(successfully_notified_proxies) > 0 {
+                        mutex.Lock()
+                        
+                        // reload proxy links to get latest state
+                        loadProxyLinksJSON()
+                        
+                        // update notified status for successfully notified proxies
+                        for _, proxyName := range successfully_notified_proxies {
+                            if actual_ref, exists := references.Proxies[proxyName]; exists {
+                                actual_ref.Notified = true
+                                references.Proxies[proxyName] = actual_ref
+                            }
+                        }
+                        
+                        // save updated links
+                        saveProxyLinksJSON()
+                        
+                        mutex.Unlock()
+                    }
                 }
 
-
-                mutex.Unlock()
                 last_notified = time.Now()
             }
         }
