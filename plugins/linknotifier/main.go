@@ -105,6 +105,62 @@ func check(e error) {
         panic(e)
     }
 }
+
+// getMetas extracts metas from the request content
+// In FRP v0.65+, user-level metas are in content.user.metas
+// and proxy-level metas are in content.metas
+func getMetas(content map[string]interface{}) map[string]interface{} {
+    // First try proxy-level metas (new format)
+    if metas, ok := content["metas"]; ok && metas != nil {
+        if metasMap, ok := metas.(map[string]interface{}); ok {
+            return metasMap
+        }
+    }
+    // Try user-level metas (new format)
+    if user, ok := content["user"]; ok && user != nil {
+        if userMap, ok := user.(map[string]interface{}); ok {
+            if metas, ok := userMap["metas"]; ok && metas != nil {
+                if metasMap, ok := metas.(map[string]interface{}); ok {
+                    return metasMap
+                }
+            }
+        }
+    }
+    return nil
+}
+
+// getProxyName extracts proxy_name from content (unchanged in new format)
+func getProxyName(content map[string]interface{}) string {
+    if name, ok := content["proxy_name"]; ok && name != nil {
+        return name.(string)
+    }
+    return ""
+}
+
+// getProxyType extracts proxy_type from content (unchanged in new format)
+func getProxyType(content map[string]interface{}) string {
+    if ptype, ok := content["proxy_type"]; ok && ptype != nil {
+        return ptype.(string)
+    }
+    return ""
+}
+
+// getRemotePort extracts remote_port from content (unchanged in new format)
+func getRemotePort(content map[string]interface{}) int {
+    if port, ok := content["remote_port"]; ok && port != nil {
+        return int(port.(float64))
+    }
+    return 0
+}
+
+// getSubdomain extracts subdomain from content
+func getSubdomain(content map[string]interface{}) string {
+    if subdomain, ok := content["subdomain"]; ok && subdomain != nil {
+        return subdomain.(string)
+    }
+    return ""
+}
+
 func loadProxyLinksJSON() {
     file, err := ioutil.ReadFile("links.json")
 
@@ -138,12 +194,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
                     return
                 }
 
-                metas, ok := r.Content["metas"]
+                metas := getMetas(r.Content)
 
-                // do nothing if metas does not exists
-                if ok && metas != nil {
-
-                    metas := metas.(map[string]interface{})
+                // do nothing if metas does not exist
+                if metas != nil {
 
                     notify_email, ok_email := metas["notify_email"]
                     frpc_prefix, ok_prefix := metas["frpc_prefix"]
@@ -153,31 +207,37 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
                     if ok_email && ok_prefix && ok_port {
 
-                        var key = fmt.Sprintf("%v:%v", r.Content["proxy_name"], r.Content["proxy_type"])
+                        proxyType := getProxyType(r.Content)
+                        proxyName := getProxyName(r.Content)
+                        var key = fmt.Sprintf("%v:%v", proxyName, proxyType)
 
                         var url string = getEnv("FRPS_SUBDOMAIN_HOST","example.com")
                         var remote_port int = 0
 
-                        if r.Content["proxy_type"] == "tcp" || r.Content["proxy_type"] == "udp" {
-                            remote_port = int(r.Content["remote_port"].(float64))
+                        if proxyType == "tcp" || proxyType == "udp" {
+                            remote_port = getRemotePort(r.Content)
 
                             url = fmt.Sprintf("%v:%v", url, remote_port)
 
-                        } else if r.Content["proxy_type"] == "http" {
+                        } else if proxyType == "http" {
                             remote_port = 80
 
-                            url =  fmt.Sprintf("http://%v.%v", r.Content["subdomain"], url)
+                            subdomain := getSubdomain(r.Content)
+                            url =  fmt.Sprintf("http://%v.%v", subdomain, url)
 
-                        }  else if r.Content["proxy_type"] == "https" {
+                        }  else if proxyType == "https" {
                             remote_port = 443
 
-                            url =  fmt.Sprintf("https://%v.%v", r.Content["subdomain"], url)
+                            subdomain := getSubdomain(r.Content)
+                            url =  fmt.Sprintf("https://%v.%v", subdomain, url)
+
+                        }
 
                         }
 
                         local_port, _ := strconv.Atoi(local_port.(string))
 
-                        var container_name string = r.Content["proxy_name"].(string)
+                        var container_name string = proxyName
 
                         // to get actual container name by removing prefix name and port number suffix
                         container_name = strings.Replace(container_name, fmt.Sprintf("%s_",frpc_prefix),"", 1)
@@ -185,7 +245,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
                         ref := ProxyInfo{ Name: key,
                                           ContainerName: container_name,
-                                          ProxyType: r.Content["proxy_type"].(string),
+                                          ProxyType: proxyType,
                                           RemotePort: remote_port,
                                           LocalPort: int(local_port),
                                           Email: notify_email.(string),
