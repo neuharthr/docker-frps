@@ -2,9 +2,6 @@
 bindAddr = "{{getenv "FRPS_BIND_ADDRESS" "0.0.0.0"}}"
 bindPort = 7000
 
-# UDP port to help make UDP hole to penetrate NAT
-bindUdpPort = 7001
-
 # UDP port used for KCP protocol, it can be same with 'bindPort'
 # If not set, KCP is disabled in frps
 kcpBindPort = 7000
