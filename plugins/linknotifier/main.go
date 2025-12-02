@@ -233,8 +233,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
                         }
 
-                        }
-
                         local_port, _ := strconv.Atoi(local_port.(string))
 
                         var container_name string = proxyName
