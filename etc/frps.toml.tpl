@@ -43,7 +43,7 @@ allowPorts = [
 ]
 
 # pool_count in each proxy will change to max_pool_count if they exceed the maximum value
-maxPoolCount = 5
+transport.maxPoolCount = 5
 
 maxPortsPerClient = {{getenv "FRPS_MAX_PORTS" "0"}}
 
