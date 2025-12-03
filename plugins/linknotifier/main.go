@@ -252,6 +252,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
                                           Active: true,
                                           Notified: false }
 
+                        
+                        fmt.Printf("[linknotifier - handler]: Acquired mutex for notification processing\n")
+
                         mutex.Lock()
 
                         // first load proxy list from JSON file to sync with any changes done manually by the user
@@ -271,6 +274,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
                         }
 
                         mutex.Unlock()
+                        fmt.Printf("[linknotifier - handler]: Released mutex for notification processing\n")
                     }
                 }
 
@@ -453,9 +457,13 @@ func notifier_main() {
 
                 mutex.Lock()
                 
+                fmt.Printf("[linknotifier]: Acquired mutex for notification processing\n")
+
                 // load proxy links from JSON file to sync with any changes done manually by the user
                 loadProxyLinksJSON()
                 
+                fmt.Printf("[linknotifier]: Read proxy links from JSON file\n")
+
                 // first check for validity of each connection and flag unresponsive ones
                 should_notify := false
                 num_active := 0
@@ -477,9 +485,15 @@ func notifier_main() {
                     references.Proxies[name] = proxy_ref
 
                 }
-
+                
+                fmt.Printf("[linknotifier]: Found %d active proxies out of %d total proxies\n", num_active, len(references.Proxies))
                 // save updated links
                 saveProxyLinksJSON()
+                
+                // Release mutex before sending emails (which can be slow)
+                mutex.Unlock()
+
+                fmt.Printf("[linknotifier]: Saved updated proxy links to JSON file (released mutex)\n")
 
                 // then group references by email notifications
                 var gruped_proxies = make(map[string][]ProxyInfo)
@@ -487,11 +501,10 @@ func notifier_main() {
                     gruped_proxies[proxy_ref.Email] = append(gruped_proxies[proxy_ref.Email], proxy_ref)
                 }
 
-                // Release mutex before sending emails (which can be slow)
-                mutex.Unlock()
-
                 // perform user notification if needed
                 if should_notify {
+
+                    fmt.Printf("[linknotifier]: Performing user notifications\n")
 
                     var num_sent_emails int = 0
                     var email_recipients []string
@@ -556,6 +569,8 @@ func notifier_main() {
                             if err != nil {
                                 fmt.Printf("[linknotifier]: ERROR in notifier_main(): when sending mail to %s got '%s'\n", email, err)
                                 continue
+                            } else {
+                                fmt.Printf("[linknotifier]: Notification email successfully sent to %s\n", email)
                             }
 
                             num_sent_emails = num_sent_emails + 1
@@ -572,11 +587,15 @@ func notifier_main() {
 
                     // Re-acquire mutex to update notified status
                     if len(successfully_notified_proxies) > 0 {
+
+                        fmt.Printf("[linknotifier]: Re-acquiring mutex to update notified status\n")
                         mutex.Lock()
                         
                         // reload proxy links to get latest state
                         loadProxyLinksJSON()
                         
+                        fmt.Printf("[linknotifier]: Reloaded proxy links from JSON file\n") 
+
                         // update notified status for successfully notified proxies
                         for _, proxyName := range successfully_notified_proxies {
                             if actual_ref, exists := references.Proxies[proxyName]; exists {
@@ -585,12 +604,21 @@ func notifier_main() {
                             }
                         }
                         
+                        fmt.Printf("[linknotifier]: Updated notified status for successfully notified proxies\n")
+
                         // save updated links
                         saveProxyLinksJSON()
                         
+                        fmt.Printf("[linknotifier]: Saved updated proxy links to JSON file\n")
+
                         mutex.Unlock()
+
+                        fmt.Printf("[linknotifier]: Released mutex after updating notified status\n")
                     }
+                } else {
+                    fmt.Printf("[linknotifier]: No new notifications needed\n")
                 }
+
 
                 last_notified = time.Now()
             }
