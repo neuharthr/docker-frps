@@ -31,6 +31,40 @@ func check(e error) {
     }
 }
 
+// getProxyType extracts proxy_type from content (unchanged in new format)
+func getProxyType(content map[string]interface{}) string {
+    if ptype, ok := content["proxy_type"]; ok && ptype != nil {
+        return ptype.(string)
+    }
+    return ""
+}
+
+// getSubdomain extracts subdomain from content
+func getSubdomain(content map[string]interface{}) string {
+    if subdomain, ok := content["subdomain"]; ok && subdomain != nil {
+        return subdomain.(string)
+    }
+    return ""
+}
+
+// getCustomDomains extracts custom_domains from content
+func getCustomDomains(content map[string]interface{}) []string {
+    if domains, ok := content["custom_domains"]; ok && domains != nil {
+        // Handle both []interface{} and []string
+        switch d := domains.(type) {
+        case []interface{}:
+            result := make([]string, len(d))
+            for i, v := range d {
+                result[i] = v.(string)
+            }
+            return result
+        case []string:
+            return d
+        }
+    }
+    return nil
+}
+
 type APIServer struct {
 	logger *log.Logger
     proxy  *ProxyServer
@@ -59,17 +93,18 @@ func (s APIServer) handler(w http.ResponseWriter, r *http.Request) {
                 o.Reject = false
                 o.Unchange = true
 
-                if r.Content["proxy_type"] == "http" || r.Content["proxy_type"] == "https" {
-                    if r.Content["subdomain"] != "" {
-                        var full_domain = r.Content["subdomain"].(string) + "." + s.domain
-                        s.proxy.addFrontend(full_domain, r.Content["proxy_type"] == "https")
+                proxyType := getProxyType(r.Content)
+                if proxyType == "http" || proxyType == "https" {
+                    subdomain := getSubdomain(r.Content)
+                    if subdomain != "" {
+                        var full_domain = subdomain + "." + s.domain
+                        s.proxy.addFrontend(full_domain, proxyType == "https")
                     }
 
-                    if r.Content["custom_domains"] != nil {
-
-                        for _, domain := range r.Content["custom_domains"].([]string) {
-                            s.proxy.addFrontend(domain, r.Content["proxy_type"] == "https")
-
+                    customDomains := getCustomDomains(r.Content)
+                    if customDomains != nil {
+                        for _, domain := range customDomains {
+                            s.proxy.addFrontend(domain, proxyType == "https")
                         }
                     }
 

@@ -56,6 +56,53 @@ func check(e error) {
     }
 }
 
+// getMetas extracts metas from the request content
+// In FRP v0.65+, user-level metas are in content.user.metas
+// and proxy-level metas are in content.metas
+func getMetas(content map[string]interface{}) map[string]interface{} {
+    // First try proxy-level metas (new format)
+    if metas, ok := content["metas"]; ok && metas != nil {
+        if metasMap, ok := metas.(map[string]interface{}); ok {
+            return metasMap
+        }
+    }
+    // Try user-level metas (new format)
+    if user, ok := content["user"]; ok && user != nil {
+        if userMap, ok := user.(map[string]interface{}); ok {
+            if metas, ok := userMap["metas"]; ok && metas != nil {
+                if metasMap, ok := metas.(map[string]interface{}); ok {
+                    return metasMap
+                }
+            }
+        }
+    }
+    return nil
+}
+
+// getProxyName extracts proxy_name from content (unchanged in new format)
+func getProxyName(content map[string]interface{}) string {
+    if name, ok := content["proxy_name"]; ok && name != nil {
+        return name.(string)
+    }
+    return ""
+}
+
+// getProxyType extracts proxy_type from content (unchanged in new format)
+func getProxyType(content map[string]interface{}) string {
+    if ptype, ok := content["proxy_type"]; ok && ptype != nil {
+        return ptype.(string)
+    }
+    return ""
+}
+
+// getRemotePort extracts remote_port from content (unchanged in new format)
+func getRemotePort(content map[string]interface{}) int {
+    if port, ok := content["remote_port"]; ok && port != nil {
+        return int(port.(float64))
+    }
+    return 0
+}
+
 var portMin int = getEnvInt("PLUGIN_PORT_MIN", 30000)
 var portMax int = getEnvInt("PLUGIN_PORT_MAX", 30900)
 
@@ -90,10 +137,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
                     return
                 }
                 
-                if r.Content["proxy_type"] == "tcp" || r.Content["proxy_type"] == "udp" {
+                proxyType := getProxyType(r.Content)
+                if proxyType == "tcp" || proxyType == "udp" {
                     
-                    var key = fmt.Sprintf("%v:%v", r.Content["proxy_name"], r.Content["proxy_type"])
-                    var port int = int(r.Content["remote_port"].(float64))
+                    proxyName := getProxyName(r.Content)
+                    var key = fmt.Sprintf("%v:%v", proxyName, proxyType)
+                    var port int = getRemotePort(r.Content)
 
                     // Allocate or retrieve port
                     if port == 0 {
